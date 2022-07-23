@@ -1,0 +1,1 @@
+sudo cat /var/log/nginx/access.log | alp ltsv -m '^/api/player/competitions$,^/api/player/competition/[^/]+/ranking$',^/api/player/competition/[^/]+/score$',^/api/player/competition/[^/]+/finish$,^/api/player/player/[^/]+$,/api/organizer/competition/[^/]+/score,/api/organizer/competition/[^/]+/finish,/api/organizer/player/[^/]+/disqualified' --sort sum -r
