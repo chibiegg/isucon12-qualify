@@ -565,7 +565,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB *sqlx.Tx, tenantID
 	scoredPlayerIDs := []string{}
 
 	playerScoreCache, ok := playerScoreCacheMap[competitonID]
-	if !ok {
+	if ok {
 		// キャッシュを利用
 		for _, ps := range playerScoreCache {
 			scoredPlayerIDs = append(scoredPlayerIDs, ps.PlayerID)
