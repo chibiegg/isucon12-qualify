@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -50,8 +51,10 @@ var (
 
 	sqliteDriverName = "sqlite3"
 
-	playerScoreCacheMap map[string][]PlayerScoreRow
-	playerCacheMap      map[string]PlayerRow
+	playerScoreCacheMap      map[string][]PlayerScoreRow
+	playerScoreCacheMapMutex *sync.RWMutex
+	playerCacheMap           map[string]PlayerRow
+	playerCacheMapMutex      *sync.RWMutex
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -102,6 +105,11 @@ func createTenantDB() error {
 
 // キャッシュを初期化する
 func loadCache() {
+	playerScoreCacheMapMutex.Lock()
+	playerCacheMapMutex.Lock()
+	defer playerScoreCacheMapMutex.Unlock()
+	defer playerCacheMapMutex.Unlock()
+
 	playerScoreCacheMap = map[string][]PlayerScoreRow{}
 	playerCacheMap = map[string]PlayerRow{}
 
@@ -162,6 +170,9 @@ func Run() {
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
+
+	playerScoreCacheMapMutex = &sync.RWMutex{}
+	playerCacheMapMutex = &sync.RWMutex{}
 
 	var (
 		sqlLogger io.Closer
@@ -409,7 +420,10 @@ func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow
 	var p PlayerRow
 
 	// キャッシュからの取得を試みる
+	playerCacheMapMutex.RLock()
 	p, ok := playerCacheMap[id]
+	playerCacheMapMutex.RUnlock()
+
 	if ok {
 		return &p, nil
 	}
@@ -588,7 +602,10 @@ func billingReportByCompetition(ctx context.Context, tenantDB *sqlx.Tx, tenantID
 	// スコアを登録した参加者のIDを取得する
 	scoredPlayerIDs := []string{}
 
+	playerScoreCacheMapMutex.RLock()
 	playerScoreCache, ok := playerScoreCacheMap[competitonID]
+	playerScoreCacheMapMutex.RUnlock()
+
 	if ok {
 		// キャッシュを利用
 		for _, ps := range playerScoreCache {
@@ -820,6 +837,7 @@ func playersAddHandler(c echo.Context) error {
 			)
 		}
 
+		playerCacheMapMutex.Lock()
 		playerCacheMap[id] = PlayerRow{
 			TenantID:       v.tenantID,
 			ID:             id,
@@ -828,6 +846,7 @@ func playersAddHandler(c echo.Context) error {
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
+		playerCacheMapMutex.Unlock()
 
 		pds = append(pds, PlayerDetail{
 			ID:             id,
@@ -882,7 +901,9 @@ func playerDisqualifiedHandler(c echo.Context) error {
 
 	p.IsDisqualified = true
 	p.UpdatedAt = now
+	playerCacheMapMutex.Lock()
 	playerCacheMap[playerID] = *p
+	playerCacheMapMutex.Unlock()
 
 	res := PlayerDisqualifiedHandlerResult{
 		Player: PlayerDetail{
@@ -1141,7 +1162,9 @@ func competitionScoreHandler(c echo.Context) error {
 		psList[i].Rank = int64(i + 1)
 	}
 
+	playerScoreCacheMapMutex.Lock()
 	playerScoreCacheMap[competitionID] = psList
+	playerScoreCacheMapMutex.Unlock()
 
 	if _, err := tx.NamedExecContext(
 		ctx,
