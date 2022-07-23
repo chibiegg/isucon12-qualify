@@ -1,4 +1,5 @@
 .*
 tmp/
 initial_data/
-webapp/sql
+webapp/sql/admin/*.sql
+webapp/sql/tenant/
