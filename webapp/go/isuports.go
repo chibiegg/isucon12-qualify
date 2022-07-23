@@ -858,6 +858,7 @@ type CompetitionsAddHandlerResult struct {
 func competitionsAddHandler(c echo.Context) error {
 
 	if rand.Intn(100) > 80 {
+		c.Response().Header().Set(echo.HeaderRetryAfter, "5")
 		return echo.NewHTTPError(429, "too many requests")
 	}
 
