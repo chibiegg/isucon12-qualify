@@ -4,3 +4,4 @@ initial_data/
 webapp/sql/admin/90_data.sql
 logs/
 pprof/
+initial_data_bak/
