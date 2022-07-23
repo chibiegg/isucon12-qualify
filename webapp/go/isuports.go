@@ -1084,7 +1084,7 @@ func competitionScoreHandler(c echo.Context) error {
 
 	if _, err := tx.NamedExecContext(
 		ctx,
-		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, rank, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
+		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, `rank`, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
 		psList,
 	); err != nil {
 		tx.Rollback()
@@ -1301,7 +1301,7 @@ func competitionRankingHandler(c echo.Context) error {
 	if err := tx.SelectContext(
 		ctx,
 		&pagedRanks,
-		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as rank FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
+		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as `rank` FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
 		tenant.ID,
 		competitionID,
 		rankAfter,
