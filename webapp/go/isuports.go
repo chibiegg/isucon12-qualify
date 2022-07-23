@@ -168,8 +168,8 @@ func Run() {
 	}()
 
 	e := echo.New()
-	e.Debug = true
-	e.Logger.SetLevel(log.DEBUG)
+	e.Debug = false
+	e.Logger.SetLevel(log.ERROR)
 
 	playerScoreCacheMapMutex = &sync.RWMutex{}
 	playerCacheMapMutex = &sync.RWMutex{}
