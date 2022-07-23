@@ -1362,12 +1362,14 @@ func competitionRankingHandler(c echo.Context) error {
 		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
 	}
 
-	// INSERT 失敗しても無視する
-	adminDB.ExecContext(
-		ctx,
-		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		v.playerID, tenant.ID, competitionID, now, now,
-	)
+	go func() {
+		// INSERT 失敗しても無視する
+		adminDB.ExecContext(
+			ctx,
+			"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+			v.playerID, tenant.ID, competitionID, now, now,
+		)
+	}()
 
 	var rankAfter int64
 	rankAfterStr := c.QueryParam("rank_after")
