@@ -1215,11 +1215,11 @@ func playerHandler(c echo.Context) error {
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
 
-	psds := []PlayerScoreDetail{}
+	pss := []PlayerScoreRow{}
 	if err := tenantDB.SelectContext(
 		ctx,
-		&psds,
-		"SELECT competition.title,player_score.score FROM player_score LEFT JOIN competition ON player_score.competition_id=competition.id WHERE player_score.tenant_id=? AND player_score.player_id=?",
+		&pss,
+		"SELECT * FROM player_score WHERE tenant_id=? AND player_id=?",
 		v.tenantID,
 		p.ID,
 	); err != nil {
@@ -1227,6 +1227,18 @@ func playerHandler(c echo.Context) error {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("error Select player_score: tenantID=%d, playerID=%s, %w", v.tenantID, p.ID, err)
 		}
+	}
+
+	psds := make([]PlayerScoreDetail, 0, len(pss))
+	for _, ps := range pss {
+		comp, err := retrieveCompetition(ctx, tenantDB, ps.CompetitionID)
+		if err != nil {
+			return fmt.Errorf("error retrieveCompetition: %w", err)
+		}
+		psds = append(psds, PlayerScoreDetail{
+			CompetitionTitle: comp.Title,
+			Score:            ps.Score,
+		})
 	}
 
 	res := SuccessResult{
