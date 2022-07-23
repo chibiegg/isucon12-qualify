@@ -407,6 +407,13 @@ type PlayerRow struct {
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
 	var p PlayerRow
+
+	// キャッシュからの取得を試みる
+	p, ok := playerCacheMap[id]
+	if ok {
+		return &p, nil
+	}
+
 	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
 		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
 	}
