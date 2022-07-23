@@ -430,6 +430,7 @@ type PlayerScoreRow struct {
 	CompetitionID string `db:"competition_id"`
 	Score         int64  `db:"score"`
 	RowNum        int64  `db:"row_num"`
+	Rank          int64  `db:"rank"`
 	CreatedAt     int64  `db:"created_at"`
 	UpdatedAt     int64  `db:"updated_at"`
 }
@@ -1078,12 +1079,12 @@ func competitionScoreHandler(c echo.Context) error {
 		return psList[i].Score > psList[j].Score
 	})
 	for i := range psList {
-		psList[i].RowNum = int64(i + 1)
+		psList[i].Rank = int64(i + 1)
 	}
 
 	if _, err := tx.NamedExecContext(
 		ctx,
-		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, rank, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
 		psList,
 	); err != nil {
 		tx.Rollback()
@@ -1300,7 +1301,7 @@ func competitionRankingHandler(c echo.Context) error {
 	if err := tx.SelectContext(
 		ctx,
 		&pagedRanks,
-		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.row_num as rank FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.row_num AND ps.row_num <= ? AND ps.player_id = p.id ORDER BY ps.row_num ASC",
+		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as rank FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
 		tenant.ID,
 		competitionID,
 		rankAfter,
