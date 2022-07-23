@@ -49,6 +49,9 @@ var (
 	tenantDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
+
+	playerScoreCacheMap map[string][]PlayerScoreRow
+	playerCacheMap      map[string]PlayerRow
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -155,6 +158,9 @@ func Run() {
 		e.Logger.Panicf("error initializeSQLLogger: %s", err)
 	}
 	defer sqlLogger.Close()
+
+	playerScoreCacheMap = map[string][]PlayerScoreRow{}
+	playerCacheMap = map[string]PlayerRow{}
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -557,14 +563,25 @@ func billingReportByCompetition(ctx context.Context, tenantDB *sqlx.Tx, tenantID
 
 	// スコアを登録した参加者のIDを取得する
 	scoredPlayerIDs := []string{}
-	if err := tenantDB.SelectContext(
-		ctx,
-		&scoredPlayerIDs,
-		"SELECT DISTINCT(player_id) FROM player_score WHERE tenant_id = ? AND competition_id = ?",
-		tenantID, comp.ID,
-	); err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("error Select count player_score: tenantID=%d, competitionID=%s, %w", tenantID, competitonID, err)
+
+	playerScoreCache, ok := playerScoreCacheMap[competitonID]
+	if ok {
+		// キャッシュを利用
+		for _, ps := range playerScoreCache {
+			scoredPlayerIDs = append(scoredPlayerIDs, ps.PlayerID)
+		}
+	} else {
+		// DBを利用
+		if err := tenantDB.SelectContext(
+			ctx,
+			&scoredPlayerIDs,
+			"SELECT player_id FROM player_score WHERE tenant_id = ? AND competition_id = ?",
+			tenantID, comp.ID,
+		); err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("error Select count player_score: tenantID=%d, competitionID=%s, %w", tenantID, competitonID, err)
+		}
 	}
+
 	for _, pid := range scoredPlayerIDs {
 		// スコアが登録されている参加者
 		billingMap[pid] = "player"
@@ -1088,6 +1105,8 @@ func competitionScoreHandler(c echo.Context) error {
 	for i := range psList {
 		psList[i].Rank = int64(i + 1)
 	}
+
+	playerScoreCacheMap[competitionID] = psList
 
 	if _, err := tx.NamedExecContext(
 		ctx,
