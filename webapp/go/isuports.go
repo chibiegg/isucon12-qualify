@@ -80,12 +80,15 @@ func tenantDBPath() string {
 
 // テナントDBに接続する
 func connectToTenantDB() (*sqlx.DB, error) {
-	p := tenantDBPath()
-	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
-	if err != nil {
-		return nil, fmt.Errorf("failed to open tenant DB: %w", err)
-	}
-	return db, nil
+	config := mysql.NewConfig()
+	config.Net = "tcp"
+	config.Addr = getEnv("ISUCON_TENANT_DB_HOST", "127.0.0.1") + ":" + getEnv("ISUCON_DB_PORT", "3306")
+	config.User = getEnv("ISUCON_DB_USER", "isucon")
+	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
+	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
+	config.ParseTime = true
+	dsn := config.FormatDSN()
+	return sqlx.Open("mysql", dsn)
 }
 
 // テナントDBを新規に作成する
