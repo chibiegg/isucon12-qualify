@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -429,6 +430,7 @@ type PlayerScoreRow struct {
 	CompetitionID string `db:"competition_id"`
 	Score         int64  `db:"score"`
 	RowNum        int64  `db:"row_num"`
+	Rank          int64  `db:"rank"`
 	CreatedAt     int64  `db:"created_at"`
 	UpdatedAt     int64  `db:"updated_at"`
 }
@@ -1069,9 +1071,20 @@ func competitionScoreHandler(c echo.Context) error {
 		psList = append(psList, ps)
 	}
 
+	// ranking用に事前にsortして、row_numにrankingを入れる
+	sort.Slice(psList, func(i, j int) bool {
+		if psList[i].Score == psList[j].Score {
+			return psList[i].RowNum < psList[j].RowNum
+		}
+		return psList[i].Score > psList[j].Score
+	})
+	for i := range psList {
+		psList[i].Rank = int64(i + 1)
+	}
+
 	if _, err := tx.NamedExecContext(
 		ctx,
-		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, `rank`, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
 		psList,
 	); err != nil {
 		tx.Rollback()
@@ -1218,7 +1231,7 @@ func playerHandler(c echo.Context) error {
 }
 
 type CompetitionRank struct {
-	Rank              int64  `json:"rank"`
+	Rank              int64  `json:"rank" db:"rank"`
 	Score             int64  `json:"score" db:"score"`
 	PlayerID          string `json:"player_id" db:"player_id"`
 	PlayerDisplayName string `json:"player_display_name" db:"display_name"`
@@ -1288,21 +1301,16 @@ func competitionRankingHandler(c echo.Context) error {
 	if err := tx.SelectContext(
 		ctx,
 		&pagedRanks,
-		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ps.player_id = p.id ORDER BY ps.score DESC, ps.row_num ASC limit 100 offset ?",
+		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as `rank` FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
 		tenant.ID,
 		competitionID,
 		rankAfter,
+		rankAfter+100,
 	); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
 	}
 	tx.Commit()
-
-	respPagedRanks := make([]CompetitionRank, 0, len(pagedRanks))
-	for i, rank := range pagedRanks {
-		rank.Rank = rankAfter + int64(i+1)
-		respPagedRanks = append(respPagedRanks, rank)
-	}
 
 	res := SuccessResult{
 		Status: true,
@@ -1312,7 +1320,7 @@ func competitionRankingHandler(c echo.Context) error {
 				Title:      competition.Title,
 				IsFinished: competition.FinishedAt.Valid,
 			},
-			Ranks: respPagedRanks,
+			Ranks: pagedRanks,
 		},
 	}
 	return c.JSON(http.StatusOK, res)
