@@ -1377,23 +1377,36 @@ func competitionRankingHandler(c echo.Context) error {
 		}
 	}
 
-	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する (トランザクションにする)
-	tx := tenantDB.MustBegin()
-
 	pagedRanks := []CompetitionRank{}
-	if err := tx.SelectContext(
-		ctx,
-		&pagedRanks,
-		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as `rank` FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
-		tenant.ID,
-		competitionID,
-		rankAfter,
-		rankAfter+100,
-	); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
+
+	playerScoreCache, ok := playerScoreCacheMap[competitionID]
+	if ok {
+		for i := int(rankAfter); i < int(rankAfter)+100; i++ {
+			if i < len(playerScoreCache) {
+				rank := CompetitionRank{
+					Rank:              playerScoreCache[i].Rank,
+					Score:             playerScoreCache[i].Score,
+					PlayerID:          playerScoreCache[i].PlayerID,
+					PlayerDisplayName: playerCacheMap[playerScoreCache[i].PlayerID].DisplayName,
+				}
+				pagedRanks = append(pagedRanks, rank)
+			} else {
+				break
+			}
+		}
+	} else {
+		if err := tenantDB.SelectContext(
+			ctx,
+			&pagedRanks,
+			"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score, ps.rank as `rank` FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ? < ps.rank AND ps.rank <= ? AND ps.player_id = p.id ORDER BY ps.rank ASC",
+			tenant.ID,
+			competitionID,
+			rankAfter,
+			rankAfter+100,
+		); err != nil {
+			return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
+		}
 	}
-	tx.Commit()
 
 	res := SuccessResult{
 		Status: true,
