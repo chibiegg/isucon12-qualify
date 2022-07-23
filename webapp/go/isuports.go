@@ -32,8 +32,6 @@ import (
 )
 
 const (
-	// tenantDBSchemaFilePath = "../sql/tenant/10_schema.sql"
-	tenantDBFilePath = "../sql/tenant/merged_tenant.sql"
 	initializeScript = "../sql/init.sh"
 	cookieName       = "isuports_session"
 
@@ -92,13 +90,7 @@ func connectToTenantDB() (*sqlx.DB, error) {
 
 // テナントDBを新規に作成する
 func createTenantDB() error {
-	p := tenantDBPath()
-
-	// オリジナルをコピーしてくる
-	cmd := exec.Command("cp", tenantDBFilePath, p)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to copy file from %s to %s: out = %s, %w", p, tenantDBFilePath, string(out), err)
-	}
+	// 何もしなくていい
 	return nil
 }
 
