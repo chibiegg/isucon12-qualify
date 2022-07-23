@@ -1250,9 +1250,9 @@ func playerHandler(c echo.Context) error {
 
 type CompetitionRank struct {
 	Rank              int64  `json:"rank"`
-	Score             int64  `json:"score", db:"score"`
-	PlayerID          string `json:"player_id", db:"player_id"`
-	PlayerDisplayName string `json:"player_display_name", db:"display_name"`
+	Score             int64  `json:"score" db:"score"`
+	PlayerID          string `json:"player_id" db:"player_id"`
+	PlayerDisplayName string `json:"player_display_name" db:"display_name"`
 }
 
 type CompetitionRankingHandlerResult struct {
@@ -1323,7 +1323,7 @@ func competitionRankingHandler(c echo.Context) error {
 	if err := tenantDB.SelectContext(
 		ctx,
 		&pagedRanks,
-		"SELECT p.display_name, ps.player_id, ps.score FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ps.player_id = p.id ORDER BY ps.score DESC, ps.row_num DESC limit 100 offset ?",
+		"SELECT p.display_name AS display_name, ps.player_id AS player_id, ps.score AS score FROM player_score as ps, player as p WHERE ps.tenant_id = ? AND ps.competition_id = ? AND ps.player_id = p.id ORDER BY ps.score DESC, ps.row_num DESC limit 100 offset ?",
 		tenant.ID,
 		competitionID,
 		rankAfter,
@@ -1331,8 +1331,10 @@ func competitionRankingHandler(c echo.Context) error {
 		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
 	}
 
+	respPagedRanks := make([]CompetitionRank, 0, len(pagedRanks))
 	for i, rank := range pagedRanks {
 		rank.Rank = rankAfter + int64(i+1)
+		respPagedRanks = append(respPagedRanks, rank)
 	}
 
 	res := SuccessResult{
@@ -1343,7 +1345,7 @@ func competitionRankingHandler(c echo.Context) error {
 				Title:      competition.Title,
 				IsFinished: competition.FinishedAt.Valid,
 			},
-			Ranks: pagedRanks,
+			Ranks: respPagedRanks,
 		},
 	}
 	return c.JSON(http.StatusOK, res)
