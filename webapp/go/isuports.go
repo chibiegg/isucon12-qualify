@@ -100,6 +100,24 @@ func createTenantDB() error {
 	return nil
 }
 
+// キャッシュを初期化する
+func loadCache() {
+	playerScoreCacheMap = map[string][]PlayerScoreRow{}
+	playerCacheMap = map[string]PlayerRow{}
+
+	// Player
+	ctx := context.Background()
+	pls := []PlayerRow{}
+	tenantDB.SelectContext(
+		ctx,
+		&pls,
+		"SELECT * FROM player",
+	)
+	for _, p := range pls {
+		playerCacheMap[p.ID] = p
+	}
+}
+
 // システム全体で一意なIDを生成する
 func dispenseID(ctx context.Context) (string, error) {
 	var id int64
@@ -159,9 +177,6 @@ func Run() {
 	}
 	defer sqlLogger.Close()
 
-	playerScoreCacheMap = map[string][]PlayerScoreRow{}
-	playerCacheMap = map[string]PlayerRow{}
-
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(SetCacheControlPrivate)
@@ -211,6 +226,8 @@ func Run() {
 	//todo: un-comment out if we migrate to MySQL
 	// tenantDB.SetMaxOpenConns(10)
 	defer tenantDB.Close()
+
+	loadCache()
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
@@ -795,14 +812,20 @@ func playersAddHandler(c echo.Context) error {
 				id, displayName, false, now, now, err,
 			)
 		}
-		p, err := retrievePlayer(ctx, tenantDB, id)
-		if err != nil {
-			return fmt.Errorf("error retrievePlayer: %w", err)
+
+		playerCacheMap[id] = PlayerRow{
+			TenantID:       v.tenantID,
+			ID:             id,
+			DisplayName:    displayName,
+			IsDisqualified: false,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
+
 		pds = append(pds, PlayerDetail{
-			ID:             p.ID,
-			DisplayName:    p.DisplayName,
-			IsDisqualified: p.IsDisqualified,
+			ID:             id,
+			DisplayName:    displayName,
+			IsDisqualified: false,
 		})
 	}
 
@@ -1520,6 +1543,7 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	createTenantDB()
+	loadCache()
 
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
