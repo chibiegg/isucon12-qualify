@@ -882,7 +882,7 @@ func playerDisqualifiedHandler(c echo.Context) error {
 
 	p.IsDisqualified = true
 	p.UpdatedAt = now
-	playerCacheMap[playerID] = p
+	playerCacheMap[playerID] = *p
 
 	res := PlayerDisqualifiedHandlerResult{
 		Player: PlayerDetail{
