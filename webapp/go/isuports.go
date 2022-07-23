@@ -1113,6 +1113,22 @@ func competitionScoreHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
 	}
+
+	// DISTINCT(player_id) する row_numが最大のものだけのこす
+
+	insertPlayerSet := make(map[string]PlayerScoreRow, len(playerScoreRows)) // 実際に挿入するデータ
+
+	for _, ps := range playerScoreRows {
+		p, ok := insertPlayerSet[ps.PlayerID]
+		if ok {
+			if p.RowNum < ps.RowNum {
+				insertPlayerSet[ps.PlayerID] = ps
+			}
+		} else {
+			insertPlayerSet[ps.PlayerID] = ps
+		}
+	}
+
 	for _, ps := range playerScoreRows {
 		if _, err := tenantDB.NamedExecContext(
 			ctx,
