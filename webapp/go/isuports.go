@@ -1194,7 +1194,6 @@ func playerHandler(c echo.Context) error {
 		&pss,
 		"SELECT * FROM player_score WHERE tenant_id=? AND player_id=?",
 		v.tenantID,
-		v.tenantID,
 		p.ID,
 	); err != nil {
 		// 行がない = スコアが記録されてない
