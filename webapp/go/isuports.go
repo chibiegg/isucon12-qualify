@@ -1384,8 +1384,8 @@ func competitionRankingHandler(c echo.Context) error {
 	playerScoreCacheMapMutex.RUnlock()
 
 	if ok {
+		playerCacheMapMutex.RLock()
 		for i := int(rankAfter); i < int(rankAfter)+100; i++ {
-			playerCacheMapMutex.RLock()
 			if i < len(playerScoreCache) {
 				rank := CompetitionRank{
 					Rank:              playerScoreCache[i].Rank,
@@ -1397,8 +1397,8 @@ func competitionRankingHandler(c echo.Context) error {
 			} else {
 				break
 			}
-			playerCacheMapMutex.RUnlock()
 		}
+		playerCacheMapMutex.RUnlock()
 	} else {
 		if err := tenantDB.SelectContext(
 			ctx,
