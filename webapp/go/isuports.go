@@ -1129,18 +1129,20 @@ func competitionScoreHandler(c echo.Context) error {
 		}
 	}
 
-	for _, ps := range playerScoreRows {
-		if _, err := tenantDB.NamedExecContext(
-			ctx,
-			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
-			ps,
-		); err != nil {
-			return fmt.Errorf(
-				"error Insert player_score: id=%s, tenant_id=%d, playerID=%s, competitionID=%s, score=%d, rowNum=%d, createdAt=%d, updatedAt=%d, %w",
-				ps.ID, ps.TenantID, ps.PlayerID, ps.CompetitionID, ps.Score, ps.RowNum, ps.CreatedAt, ps.UpdatedAt, err,
-			)
+	psList := make([]PlayerScoreRow, 0, len(insertPlayerSet))
+	for _, ps := range insertPlayerSet {
+		psList = append(psList, ps)
+	}
 
-		}
+	if _, err := tenantDB.NamedExecContext(
+		ctx,
+		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
+		psList,
+	); err != nil {
+		return fmt.Errorf(
+			"error Insert player_score %w",
+			err,
+		)
 	}
 
 	return c.JSON(http.StatusOK, SuccessResult{
