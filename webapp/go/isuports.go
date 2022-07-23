@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -50,8 +51,10 @@ var (
 
 	sqliteDriverName = "sqlite3"
 
-	playerScoreCacheMap map[string][]PlayerScoreRow
-	playerCacheMap      map[string]PlayerRow
+	playerScoreCacheMap      map[string][]PlayerScoreRow
+	playerScoreCacheMapMutex *sync.RWMutex
+	playerCacheMap           map[string]PlayerRow
+	playerCacheMapMutex      *sync.RWMutex
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -100,6 +103,29 @@ func createTenantDB() error {
 	return nil
 }
 
+// キャッシュを初期化する
+func loadCache() {
+	playerScoreCacheMapMutex.Lock()
+	playerCacheMapMutex.Lock()
+	defer playerScoreCacheMapMutex.Unlock()
+	defer playerCacheMapMutex.Unlock()
+
+	playerScoreCacheMap = map[string][]PlayerScoreRow{}
+	playerCacheMap = map[string]PlayerRow{}
+
+	// Player
+	ctx := context.Background()
+	pls := []PlayerRow{}
+	tenantDB.SelectContext(
+		ctx,
+		&pls,
+		"SELECT * FROM player",
+	)
+	for _, p := range pls {
+		playerCacheMap[p.ID] = p
+	}
+}
+
 // システム全体で一意なIDを生成する
 func dispenseID(ctx context.Context) (string, error) {
 	var id int64
@@ -145,6 +171,9 @@ func Run() {
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
 
+	playerScoreCacheMapMutex = &sync.RWMutex{}
+	playerCacheMapMutex = &sync.RWMutex{}
+
 	var (
 		sqlLogger io.Closer
 		err       error
@@ -158,9 +187,6 @@ func Run() {
 		e.Logger.Panicf("error initializeSQLLogger: %s", err)
 	}
 	defer sqlLogger.Close()
-
-	playerScoreCacheMap = map[string][]PlayerScoreRow{}
-	playerCacheMap = map[string]PlayerRow{}
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -211,6 +237,8 @@ func Run() {
 	//todo: un-comment out if we migrate to MySQL
 	// tenantDB.SetMaxOpenConns(10)
 	defer tenantDB.Close()
+
+	loadCache()
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
@@ -390,6 +418,16 @@ type PlayerRow struct {
 // 参加者を取得する
 func retrievePlayer(ctx context.Context, tenantDB dbOrTx, id string) (*PlayerRow, error) {
 	var p PlayerRow
+
+	// キャッシュからの取得を試みる
+	playerCacheMapMutex.RLock()
+	p, ok := playerCacheMap[id]
+	playerCacheMapMutex.RUnlock()
+
+	if ok {
+		return &p, nil
+	}
+
 	if err := tenantDB.GetContext(ctx, &p, "SELECT * FROM player WHERE id = ?", id); err != nil {
 		return nil, fmt.Errorf("error Select player: id=%s, %w", id, err)
 	}
@@ -564,7 +602,10 @@ func billingReportByCompetition(ctx context.Context, tenantDB *sqlx.Tx, tenantID
 	// スコアを登録した参加者のIDを取得する
 	scoredPlayerIDs := []string{}
 
+	playerScoreCacheMapMutex.RLock()
 	playerScoreCache, ok := playerScoreCacheMap[competitonID]
+	playerScoreCacheMapMutex.RUnlock()
+
 	if ok {
 		// キャッシュを利用
 		for _, ps := range playerScoreCache {
@@ -795,14 +836,22 @@ func playersAddHandler(c echo.Context) error {
 				id, displayName, false, now, now, err,
 			)
 		}
-		p, err := retrievePlayer(ctx, tenantDB, id)
-		if err != nil {
-			return fmt.Errorf("error retrievePlayer: %w", err)
+
+		playerCacheMapMutex.Lock()
+		playerCacheMap[id] = PlayerRow{
+			TenantID:       v.tenantID,
+			ID:             id,
+			DisplayName:    displayName,
+			IsDisqualified: false,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
+		playerCacheMapMutex.Unlock()
+
 		pds = append(pds, PlayerDetail{
-			ID:             p.ID,
-			DisplayName:    p.DisplayName,
-			IsDisqualified: p.IsDisqualified,
+			ID:             id,
+			DisplayName:    displayName,
+			IsDisqualified: false,
 		})
 	}
 
@@ -829,6 +878,15 @@ func playerDisqualifiedHandler(c echo.Context) error {
 	}
 	playerID := c.Param("player_id")
 
+	p, err := retrievePlayer(ctx, tenantDB, playerID)
+	if err != nil {
+		// 存在しないプレイヤー
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "player not found")
+		}
+		return fmt.Errorf("error retrievePlayer: %w", err)
+	}
+
 	now := time.Now().Unix()
 	if _, err := tenantDB.ExecContext(
 		ctx,
@@ -840,14 +898,12 @@ func playerDisqualifiedHandler(c echo.Context) error {
 			true, now, playerID, err,
 		)
 	}
-	p, err := retrievePlayer(ctx, tenantDB, playerID)
-	if err != nil {
-		// 存在しないプレイヤー
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "player not found")
-		}
-		return fmt.Errorf("error retrievePlayer: %w", err)
-	}
+
+	p.IsDisqualified = true
+	p.UpdatedAt = now
+	playerCacheMapMutex.Lock()
+	playerCacheMap[playerID] = *p
+	playerCacheMapMutex.Unlock()
 
 	res := PlayerDisqualifiedHandlerResult{
 		Player: PlayerDetail{
@@ -1106,7 +1162,9 @@ func competitionScoreHandler(c echo.Context) error {
 		psList[i].Rank = int64(i + 1)
 	}
 
+	playerScoreCacheMapMutex.Lock()
 	playerScoreCacheMap[competitionID] = psList
+	playerScoreCacheMapMutex.Unlock()
 
 	if _, err := tx.NamedExecContext(
 		ctx,
@@ -1520,6 +1578,7 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	createTenantDB()
+	loadCache()
 
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
