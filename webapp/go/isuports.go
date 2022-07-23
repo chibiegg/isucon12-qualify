@@ -1166,18 +1166,19 @@ func competitionScoreHandler(c echo.Context) error {
 	playerScoreCacheMap[competitionID] = psList
 	playerScoreCacheMapMutex.Unlock()
 
-	if _, err := tx.NamedExecContext(
-		ctx,
-		"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, `rank`, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
-		psList,
-	); err != nil {
-		tx.Rollback()
-		return fmt.Errorf(
-			"error Insert player_score %w",
-			err,
-		)
+	if len(psList) > 0 {
+		if _, err := tx.NamedExecContext(
+			ctx,
+			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, `rank`, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :rank, :created_at, :updated_at)",
+			psList,
+		); err != nil {
+			tx.Rollback()
+			return fmt.Errorf(
+				"error Insert player_score %w",
+				err,
+			)
+		}
 	}
-
 	tx.Commit()
 
 	return c.JSON(http.StatusOK, SuccessResult{
