@@ -104,7 +104,7 @@ func createTenantDB() error {
 }
 
 // キャッシュを初期化する
-func loadCache() {
+func loadCache() error {
 	playerScoreCacheMapMutex.Lock()
 	playerCacheMapMutex.Lock()
 	defer playerScoreCacheMapMutex.Unlock()
@@ -116,14 +116,18 @@ func loadCache() {
 	// Player
 	ctx := context.Background()
 	pls := []PlayerRow{}
-	tenantDB.SelectContext(
+	if err := tenantDB.SelectContext(
 		ctx,
 		&pls,
 		"SELECT * FROM player",
-	)
+	); err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error Select player, %w", err)
+	}
 	for _, p := range pls {
 		playerCacheMap[p.ID] = p
 	}
+
+	return nil
 }
 
 // システム全体で一意なIDを生成する
@@ -238,7 +242,10 @@ func Run() {
 	// tenantDB.SetMaxOpenConns(10)
 	defer tenantDB.Close()
 
-	loadCache()
+	err = loadCache()
+	if err != nil {
+		panic(err)
+	}
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting isuports server on : %s ...", port)
